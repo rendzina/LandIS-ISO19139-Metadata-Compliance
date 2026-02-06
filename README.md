@@ -76,10 +76,19 @@ python extract_metadata.py
 
 # Use a specific folder (output will be metadata_export_<foldername>.xlsx)
 python extract_metadata.py XML_Folder
+
+# Use a subfolder path (foldername is the last component, e.g. 'Public')
+python extract_metadata.py XML_Exports/Public
+```
+
+Without activating the venv (macOS/Linux):
+
+```bash
+./venv/bin/python extract_metadata.py XML_Exports/Public
 ```
 
 - **Input:** All `.xml` files in the given folder (default: `xml`).  
-- **Output:** `metadata_export_<foldername>.xlsx` in the current directory (e.g. `metadata_export_xml.xlsx` for the default folder).  
+- **Output:** `metadata_export_<foldername>.xlsx` in the current directory (e.g. `metadata_export_xml.xlsx` for the default folder, `metadata_export_Public.xlsx` for `XML_Exports/Public`).  
 - **Console:** Progress lines per file plus a final summary (file count, attribute count, compliant vs non-compliant count).
 
 ---
@@ -141,10 +150,15 @@ When the same logical field appears more than once (e.g. multiple keywords), val
 LandIS-ISO19139-Metadata-Compliance/
 ├── extract_metadata.py              # Main script: batch extract + Excel + compliance
 ├── README.md                         # This file
+├── LICENSE
 ├── .gitignore
 ├── metadata_export_<folder>.xlsx    # Generated output (ignored by git)
+├── venv/                             # Virtual environment (create via Installation; ignored by git)
 ├── xml/                              # Default input folder for XML files (create as needed)
-    └── *.xml
+│   └── *.xml
+└── XML_Exports/                      # Example alternative input folder (create as needed)
+    └── Public/
+        └── *.xml
 ```
 
 ---
