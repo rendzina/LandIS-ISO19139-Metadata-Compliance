@@ -306,7 +306,7 @@ def compute_summary(results, checks):
         summary.append({
             "Filename": filename,
             "Conformant": "Yes" if conformant else "No",
-            "Missing mandatory": ", ".join(missing) if missing else "",
+            "Missing mandatory": ", ".join(missing) if missing else "0",
             "Missing count": len(missing),
             "Present mandatory": present_mandatory,
             "Present conditional": present_conditional,
