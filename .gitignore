@@ -66,5 +66,6 @@ dmypy.json
 # Metadata files and folders
 xml/
 AGOL_XML/
+V4/
 *.xml
 *.xlsx
