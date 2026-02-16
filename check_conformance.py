@@ -317,8 +317,15 @@ def compute_summary(results, checks):
 
 def write_excel_report(results, checks, summary, errors, output_path):
     """Write Excel workbook: Compliance Summary sheet and Conformance Detail sheet."""
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    obligation_fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
+    obligation_font = Font(italic=True)
+    obligation_alignment = Alignment(horizontal="center", vertical="center")
+
     wb = Workbook()
-    # Sheet 1: Summary
+    # Sheet 1: Compliance Summary
     ws_sum = wb.active
     ws_sum.title = "Compliance Summary"
     headers = [
@@ -326,7 +333,10 @@ def write_excel_report(results, checks, summary, errors, output_path):
         "Missing count", "Present mandatory", "Present conditional", "Present optional",
     ]
     for col, h in enumerate(headers, 1):
-        ws_sum.cell(row=1, column=col, value=h)
+        c = ws_sum.cell(row=1, column=col, value=h)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = header_alignment
     for row_idx, rec in enumerate(summary, 2):
         ws_sum.cell(row=row_idx, column=1, value=rec["Filename"])
         ws_sum.cell(row=row_idx, column=2, value=rec["Conformant"])
@@ -335,33 +345,59 @@ def write_excel_report(results, checks, summary, errors, output_path):
         ws_sum.cell(row=row_idx, column=5, value=rec["Present mandatory"])
         ws_sum.cell(row=row_idx, column=6, value=rec["Present conditional"])
         ws_sum.cell(row=row_idx, column=7, value=rec["Present optional"])
-    for col in range(1, len(headers) + 1):
-        ws_sum.column_dimensions[get_column_letter(col)].width = 18
+    for col_num in range(1, len(headers) + 1):
+        ws_sum.column_dimensions[get_column_letter(col_num)].width = 24
+    for row in ws_sum.iter_rows(min_row=2, max_row=ws_sum.max_row, min_col=3, max_col=3):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-    # Sheet 2: Detail (one column per check, one row per file)
+    # Sheet 2: Conformance Detail (row 1 = headers, row 2 = obligation, row 3+ = data)
     ws_det = wb.create_sheet("Conformance Detail", 1)
-    # Row 1: check name
-    # Row 2: obligation (mandatory/conditional/optional)
-    # Row 3+: one row per file
     ws_det.cell(row=1, column=1, value="Filename")
+    c1 = ws_det.cell(row=1, column=1)
+    c1.fill = header_fill
+    c1.font = header_font
+    c1.alignment = header_alignment
     ws_det.cell(row=2, column=1, value="(obligation)")
+    ws_det.cell(row=2, column=1).fill = obligation_fill
+    ws_det.cell(row=2, column=1).font = obligation_font
+    ws_det.cell(row=2, column=1).alignment = obligation_alignment
     for col_idx, (name, obligation, _) in enumerate(checks, 2):
-        ws_det.cell(row=1, column=col_idx, value=name)
-        ws_det.cell(row=2, column=col_idx, value=obligation)
+        c = ws_det.cell(row=1, column=col_idx, value=name)
+        c.fill = header_fill
+        c.font = header_font
+        c.alignment = header_alignment
+        c2 = ws_det.cell(row=2, column=col_idx, value=obligation)
+        c2.fill = obligation_fill
+        c2.font = obligation_font
+        c2.alignment = obligation_alignment
     for row_idx, filename in enumerate(sorted(results.keys()), start=3):
         ws_det.cell(row=row_idx, column=1, value=filename)
-        row = results[filename]
+        row_data = results[filename]
         for col_idx, (name, _, _) in enumerate(checks, 2):
-            ws_det.cell(row=row_idx, column=col_idx, value=row.get(name, "Absent"))
+            ws_det.cell(row=row_idx, column=col_idx, value=row_data.get(name, "Absent"))
     ws_det.freeze_panes = "B3"
-    for col in range(1, len(checks) + 2):
-        ws_det.column_dimensions[get_column_letter(col)].width = 12
+    detail_headers = ["Filename"] + [name for name, _, _ in checks]
+    for col_num, header in enumerate(detail_headers, 1):
+        max_length = len(str(header))
+        column_letter = get_column_letter(col_num)
+        for r in range(1, ws_det.max_row + 1):
+            cell = ws_det.cell(row=r, column=col_num)
+            if cell.value and len(str(cell.value)) > max_length:
+                max_length = min(len(str(cell.value)), 100)
+        ws_det.column_dimensions[column_letter].width = min(max_length + 2, 100)
+    for row in ws_det.iter_rows(min_row=3, max_row=ws_det.max_row, min_col=1, max_col=ws_det.max_column):
+        for cell in row:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     # Optional: Errors sheet if any files were skipped
     if errors:
         ws_err = wb.create_sheet("Errors", 2)
-        ws_err.cell(row=1, column=1, value="Filename")
-        ws_err.cell(row=1, column=2, value="Error")
+        for col, h in enumerate(["Filename", "Error"], 1):
+            c = ws_err.cell(row=1, column=col, value=h)
+            c.fill = header_fill
+            c.font = header_font
+            c.alignment = header_alignment
         for row_idx, (fname, err_msg) in enumerate(errors, 2):
             ws_err.cell(row=row_idx, column=1, value=fname)
             ws_err.cell(row=row_idx, column=2, value=err_msg)

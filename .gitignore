@@ -42,6 +42,7 @@ venv.bak/
 metadata_export.XLSX
 *.xlsx
 *.xls
+*.zip
 
 # Jupyter Notebook
 .ipynb_checkpoints
