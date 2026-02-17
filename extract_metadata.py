@@ -58,6 +58,674 @@ FIELD_OBLIGATION = {
 }
 # All other fields (ArcGIS-specific, optional contact details, etc.) are optional unless listed above.
 
+# ISO 19139 codelist labels for report output (from gmxCodelists etc.).
+# ArcGIS exports often use numeric 'value' (e.g. "005" for licence); we map to readable labels.
+# by_num (integer -> display label) is sourced from Esri ArcGIS Pro Metadata Toolkit:
+#   ArcGIS Metadata Details 20211130.xlsx (Coded Values sheet)
+#   https://github.com/Esri/arcgis-pro-metadata-toolkit/blob/master/resources/ArcGIS%20Metadata%20Details%2020211130.xlsx
+# See also https://data.noaa.gov/resources/iso19139/schema/resources/Codelist/gmxCodelists.xml
+# Keys: code name (lowercase) or 1-based index as string ("1", "005" → 5).
+
+# Excel codelist name -> our _CODELISTS key (when they differ)
+_ARCGIS_EXCEL_CODELIST_TO_OURS = {"MD_CharSetCd": "MD_CharacterSetCode"}
+
+
+def _normalise_code(s):
+    """Normalise standard/profile code for by_name lookup (lowercase, no spaces/hyphens)."""
+    if not s or not isinstance(s, str):
+        return ""
+    return re.sub(r"[\s\-/]", "", s).lower().split("(")[0].strip()
+
+
+def _format_code_as_label(std_code):
+    """Turn a camelCase or lowercase code name into a display label (UK spelling where applicable)."""
+    if not std_code or not isinstance(std_code, str):
+        return str(std_code) if std_code else ""
+    s = std_code.strip()
+    if s.startswith("(") and "reserved" in s.lower():
+        return "Reserved"
+    if "/" in s:
+        s = s.split("/")[-1]
+    out = []
+    for i, c in enumerate(s):
+        if c.isupper() and i:
+            out.append(" ")
+            out.append(c)
+        else:
+            out.append(c.upper() if i == 0 or (i > 0 and out[-1] == " ") else c.lower())
+    result = "".join(out).replace("  ", " ").strip()
+    if result.lower() == "license":
+        return "Licence"
+    return result
+
+
+def _load_arcgis_coded_values_from_excel(excel_path):
+    """
+    Read ArcGIS Metadata Details xlsx (Coded Values sheet) and return
+    list of (our_codelist_name, arc_code_str, std_code_str). Returns None if file missing.
+    """
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return None
+    path = Path(excel_path)
+    if not path.is_file():
+        return None
+    try:
+        wb = load_workbook(path, read_only=True, data_only=True)
+        ws = wb["Coded Values"]
+        rows = list(ws.iter_rows(min_row=5, max_row=600, values_only=True))
+        wb.close()
+    except Exception:
+        return None
+    result = []
+    current = None
+    for row in rows:
+        if row and row[0] is not None:
+            current = str(row[0]).strip() if row[0] else current
+        if not row or row[2] is None or row[1] is None:
+            continue
+        codelist_name = _ARCGIS_EXCEL_CODELIST_TO_OURS.get(current, current) if current else None
+        if not codelist_name:
+            continue
+        arc_code = str(row[2]).strip()
+        std_code = str(row[1]).strip()
+        if arc_code.isdigit():
+            result.append((codelist_name, arc_code, std_code))
+    return result
+
+
+def _get_inlined_arcgis_coded_values():
+    """
+    Inlined (codelist_name, arc_code, std_code) from ArcGIS Metadata Details 20211130.xlsx
+    so by_num can be built without requiring the Excel file. Used when the file is not present.
+    """
+    return [
+        ("CI_PresentationFormCode", "001", "documentDigital"),
+        ("CI_PresentationFormCode", "002", "documentHardcopy"),
+        ("CI_PresentationFormCode", "003", "imageDigital"),
+        ("CI_PresentationFormCode", "004", "imageHardcopy"),
+        ("CI_PresentationFormCode", "005", "mapDigital"),
+        ("CI_PresentationFormCode", "006", "mapHardcopy"),
+        ("CI_PresentationFormCode", "007", "modelDigital"),
+        ("CI_PresentationFormCode", "008", "modelHardcopy"),
+        ("CI_PresentationFormCode", "009", "profileDigital"),
+        ("CI_PresentationFormCode", "010", "profileHardcopy"),
+        ("CI_PresentationFormCode", "011", "tableDigital"),
+        ("CI_PresentationFormCode", "012", "tableHardcopy"),
+        ("CI_PresentationFormCode", "013", "videoDigital"),
+        ("CI_PresentationFormCode", "014", "videoHardcopy"),
+        ("CI_PresentationFormCode", "015", "audioDigital"),
+        ("CI_PresentationFormCode", "016", "audioHardcopy"),
+        ("CI_PresentationFormCode", "017", "multimediaDigital"),
+        ("CI_PresentationFormCode", "018", "multimediaHardcopy"),
+        ("CI_PresentationFormCode", "019", "diagramDigital"),
+        ("CI_PresentationFormCode", "020", "diagramHardcopy"),
+        ("CI_PresentationFormCode", "021", "physicalObject"),
+        ("CI_RoleCode", "001", "resourceProvider"),
+        ("CI_RoleCode", "002", "custodian"),
+        ("CI_RoleCode", "003", "owner"),
+        ("CI_RoleCode", "004", "user"),
+        ("CI_RoleCode", "005", "distributor"),
+        ("CI_RoleCode", "006", "originator"),
+        ("CI_RoleCode", "007", "pointOfContact"),
+        ("CI_RoleCode", "008", "principalInvestigator"),
+        ("CI_RoleCode", "009", "processor"),
+        ("CI_RoleCode", "010", "publisher"),
+        ("CI_RoleCode", "011", "author"),
+        ("CI_RoleCode", "012", "collaborator"),
+        ("CI_RoleCode", "013", "editor"),
+        ("CI_RoleCode", "014", "mediator"),
+        ("CI_RoleCode", "015", "rightsHolder"),
+        ("CI_RoleCode", "016", "sponsor"),
+        ("CI_RoleCode", "017", "coAuthor"),
+        ("CI_RoleCode", "018", "contributor"),
+        ("CI_RoleCode", "019", "funder"),
+        ("CI_RoleCode", "020", "stakeholder"),
+        ("MD_MaintenanceFrequencyCode", "001", "continual"),
+        ("MD_MaintenanceFrequencyCode", "002", "daily"),
+        ("MD_MaintenanceFrequencyCode", "003", "weekly"),
+        ("MD_MaintenanceFrequencyCode", "004", "fortnightly"),
+        ("MD_MaintenanceFrequencyCode", "005", "monthly"),
+        ("MD_MaintenanceFrequencyCode", "006", "quarterly"),
+        ("MD_MaintenanceFrequencyCode", "007", "biannually"),
+        ("MD_MaintenanceFrequencyCode", "008", "annually"),
+        ("MD_MaintenanceFrequencyCode", "009", "asNeeded"),
+        ("MD_MaintenanceFrequencyCode", "010", "irregular"),
+        ("MD_MaintenanceFrequencyCode", "011", "notPlanned"),
+        ("MD_MaintenanceFrequencyCode", "012", "unknown"),
+        ("MD_MaintenanceFrequencyCode", "013", "semimonthly"),
+        ("MD_MaintenanceFrequencyCode", "014", "periodic"),
+        ("MD_MaintenanceFrequencyCode", "015", "biennially"),
+        ("MD_ProgressCode", "001", "completed"),
+        ("MD_ProgressCode", "002", "historicalArchive"),
+        ("MD_ProgressCode", "003", "obsolete"),
+        ("MD_ProgressCode", "004", "onGoing"),
+        ("MD_ProgressCode", "005", "planned"),
+        ("MD_ProgressCode", "006", "required"),
+        ("MD_ProgressCode", "007", "underDevelopment"),
+        ("MD_ProgressCode", "008", "proposed"),
+        ("MD_ProgressCode", "009", "final"),
+        ("MD_ProgressCode", "010", "pending"),
+        ("MD_ProgressCode", "011", "retired"),
+        ("MD_ProgressCode", "012", "superseded"),
+        ("MD_ProgressCode", "013", "tentative"),
+        ("MD_ProgressCode", "014", "valid"),
+        ("MD_ProgressCode", "015", "accepted"),
+        ("MD_ProgressCode", "016", "notAccepted"),
+        ("MD_ProgressCode", "017", "withdrawn"),
+        ("MD_ProgressCode", "018", "deprecated"),
+        ("MD_RestrictionCode", "001", "copyright"),
+        ("MD_RestrictionCode", "002", "patent"),
+        ("MD_RestrictionCode", "003", "patentPending"),
+        ("MD_RestrictionCode", "004", "trademark"),
+        ("MD_RestrictionCode", "005", "license"),
+        ("MD_RestrictionCode", "006", "intellectualPropertyRights"),
+        ("MD_RestrictionCode", "007", "restricted"),
+        ("MD_RestrictionCode", "008", "otherRestrictions"),
+        ("MD_RestrictionCode", "009", "licenseUnrestricted"),
+        ("MD_RestrictionCode", "010", "licenseEndUser"),
+        ("MD_RestrictionCode", "011", "licenseDistributor"),
+        ("MD_RestrictionCode", "012", "privacy"),
+        ("MD_RestrictionCode", "013", "statutory"),
+        ("MD_RestrictionCode", "014", "confidential"),
+        ("MD_RestrictionCode", "015", "sensitivity/sensitiveButUnclassified"),
+        ("MD_RestrictionCode", "016", "unrestricted"),
+        ("MD_RestrictionCode", "017", "in-confidence"),
+        ("MD_ScopeCode", "001", "attribute"),
+        ("MD_ScopeCode", "002", "attributeType"),
+        ("MD_ScopeCode", "003", "collectionHardware"),
+        ("MD_ScopeCode", "004", "collectionSession"),
+        ("MD_ScopeCode", "005", "dataset"),
+        ("MD_ScopeCode", "006", "series"),
+        ("MD_ScopeCode", "007", "nonGeographicDataset"),
+        ("MD_ScopeCode", "008", "dimensionGroup"),
+        ("MD_ScopeCode", "009", "feature"),
+        ("MD_ScopeCode", "010", "featureType"),
+        ("MD_ScopeCode", "011", "propertyType"),
+        ("MD_ScopeCode", "012", "fieldSession"),
+        ("MD_ScopeCode", "013", "software"),
+        ("MD_ScopeCode", "014", "service"),
+        ("MD_ScopeCode", "015", "model"),
+        ("MD_ScopeCode", "016", "tile"),
+        ("MD_ScopeCode", "017", "initiative"),
+        ("MD_ScopeCode", "018", "stereomate"),
+        ("MD_ScopeCode", "019", "sensor"),
+        ("MD_ScopeCode", "020", "platformSeries"),
+        ("MD_ScopeCode", "021", "sensorSeries"),
+        ("MD_ScopeCode", "022", "productionSeries"),
+        ("MD_ScopeCode", "023", "transferAggregate"),
+        ("MD_ScopeCode", "024", "otherAggregate"),
+        ("MD_ScopeCode", "025", "metadata"),
+        ("MD_ScopeCode", "026", "sample"),
+        ("MD_ScopeCode", "027", "document"),
+        ("MD_ScopeCode", "028", "repository"),
+        ("MD_ScopeCode", "029", "aggregate"),
+        ("MD_ScopeCode", "030", "product"),
+        ("MD_ScopeCode", "031", "collection"),
+        ("MD_ScopeCode", "032", "coverage"),
+        ("MD_ScopeCode", "033", "application"),
+        ("MD_SpatialRepresentationTypeCode", "001", "vector"),
+        ("MD_SpatialRepresentationTypeCode", "002", "grid"),
+        ("MD_SpatialRepresentationTypeCode", "003", "textTable"),
+        ("MD_SpatialRepresentationTypeCode", "004", "tin"),
+        ("MD_SpatialRepresentationTypeCode", "005", "stereoModel"),
+        ("MD_SpatialRepresentationTypeCode", "006", "video"),
+        ("MD_TopicCategoryCode", "001", "farming"),
+        ("MD_TopicCategoryCode", "002", "biota"),
+        ("MD_TopicCategoryCode", "003", "boundaries"),
+        ("MD_TopicCategoryCode", "004", "climatologyMeteorologyAtmosphere"),
+        ("MD_TopicCategoryCode", "005", "economy"),
+        ("MD_TopicCategoryCode", "006", "elevation"),
+        ("MD_TopicCategoryCode", "007", "environment"),
+        ("MD_TopicCategoryCode", "008", "geoscientificInformation"),
+        ("MD_TopicCategoryCode", "009", "health"),
+        ("MD_TopicCategoryCode", "010", "imageryBaseMapsEarthCover"),
+        ("MD_TopicCategoryCode", "011", "intelligenceMilitary"),
+        ("MD_TopicCategoryCode", "012", "inlandWaters"),
+        ("MD_TopicCategoryCode", "013", "location"),
+        ("MD_TopicCategoryCode", "014", "oceans"),
+        ("MD_TopicCategoryCode", "015", "planningCadastre"),
+        ("MD_TopicCategoryCode", "016", "society"),
+        ("MD_TopicCategoryCode", "017", "structure"),
+        ("MD_TopicCategoryCode", "018", "transportation"),
+        ("MD_TopicCategoryCode", "019", "utilitiesCommunication"),
+        ("MD_TopicCategoryCode", "020", "extraTerrestrial"),
+        ("MD_TopicCategoryCode", "021", "disaster"),
+        ("MD_TopologyLevelCode", "001", "geometryOnly"),
+        ("MD_TopologyLevelCode", "002", "topology1D"),
+        ("MD_TopologyLevelCode", "003", "planarGraph"),
+        ("MD_TopologyLevelCode", "004", "fullPlanarGraph"),
+        ("MD_TopologyLevelCode", "005", "surfaceGraph"),
+        ("MD_TopologyLevelCode", "006", "fullSurfaceGraph"),
+        ("MD_TopologyLevelCode", "007", "topology3D"),
+        ("MD_TopologyLevelCode", "008", "fullTopology3D"),
+        ("MD_TopologyLevelCode", "009", "abstract"),
+        ("MD_CharacterSetCode", "001", "ucs2"),
+        ("MD_CharacterSetCode", "002", "ucs4"),
+        ("MD_CharacterSetCode", "003", "utf7"),
+        ("MD_CharacterSetCode", "004", "utf8"),
+        ("MD_CharacterSetCode", "005", "utf16"),
+        ("MD_CharacterSetCode", "006", "8859part1"),
+        ("MD_CharacterSetCode", "007", "8859part2"),
+        ("MD_CharacterSetCode", "008", "8859part3"),
+        ("MD_CharacterSetCode", "009", "8859part4"),
+        ("MD_CharacterSetCode", "010", "8859part5"),
+        ("MD_CharacterSetCode", "011", "8859part6"),
+        ("MD_CharacterSetCode", "012", "8859part7"),
+        ("MD_CharacterSetCode", "013", "8859part8"),
+        ("MD_CharacterSetCode", "014", "8859part9"),
+        ("MD_CharacterSetCode", "015", "8859part10"),
+        ("MD_CharacterSetCode", "016", "8859part11"),
+        ("MD_CharacterSetCode", "017", "(reserved for future use)"),
+        ("MD_CharacterSetCode", "018", "8859part13"),
+        ("MD_CharacterSetCode", "019", "8859part14"),
+        ("MD_CharacterSetCode", "020", "8859part15"),
+        ("MD_CharacterSetCode", "021", "8859part16"),
+        ("MD_CharacterSetCode", "022", "jis"),
+        ("MD_CharacterSetCode", "023", "shiftJIS"),
+        ("MD_CharacterSetCode", "024", "eucJP"),
+        ("MD_CharacterSetCode", "025", "usAscii"),
+        ("MD_CharacterSetCode", "026", "ebcdic"),
+        ("MD_CharacterSetCode", "027", "eucKR"),
+        ("MD_CharacterSetCode", "028", "big5"),
+        ("MD_CharacterSetCode", "029", "GB2312"),
+    ]
+
+
+def _build_by_num_from_arcgis(codelist_name, by_name, arcgis_coded_values):
+    """
+    Build by_num (int -> display label) from ArcGIS coded values list.
+    Uses by_name to resolve standard code to label; falls back to _format_code_as_label.
+    """
+    by_num = {}
+    for name, arc_code, std_code in arcgis_coded_values:
+        if name != codelist_name:
+            continue
+        try:
+            num = int(arc_code)
+        except ValueError:
+            continue
+        key = _normalise_code(std_code)
+        label = by_name.get(key) if key else None
+        if label is None:
+            label = _format_code_as_label(std_code)
+        by_num[num] = label
+    return by_num
+
+
+# Resolve ArcGIS coded values once at import (Excel if present, else inlined).
+_ARCGIS_CODED_VALUES = _load_arcgis_coded_values_from_excel(
+    Path(__file__).parent / "ArcGIS Metadata Details 20211130.xlsx"
+) or _get_inlined_arcgis_coded_values()
+
+
+def _codelist_restriction():
+    # MD_RestrictionCode: limitation on access or use
+    by_name = {
+        "copyright": "Copyright",
+        "patent": "Patent",
+        "patentpending": "Patent pending",
+        "trademark": "Trademark",
+        "license": "Licence",
+        "licence": "Licence",
+        "intellectualpropertyrights": "Intellectual property rights",
+        "restricted": "Restricted",
+        "otherrestrictions": "Other restrictions",
+        "unrestricted": "Unrestricted",
+        "licenceunrestricted": "Licence unrestricted",
+        "licenceenduser": "Licence end user",
+        "licencedistributor": "Licence distributor",
+        "private": "Private",
+        "privacy": "Private",
+        "statutory": "Statutory",
+        "confidential": "Confidential",
+        "sbu": "Sensitive but unclassified",
+        "sensitivebutunclassified": "Sensitive but unclassified",
+        "in-confidence": "In confidence",
+    }
+    by_num = _build_by_num_from_arcgis("MD_RestrictionCode", by_name, _ARCGIS_CODED_VALUES)
+    return by_name, by_num
+
+
+def _codelist_role():
+    # CI_RoleCode: function performed by responsible party
+    by_name = {
+        "resourceprovider": "Resource provider",
+        "custodian": "Custodian",
+        "owner": "Owner",
+        "sponsor": "Sponsor",
+        "user": "User",
+        "distributor": "Distributor",
+        "originator": "Originator",
+        "pointofcontact": "Point of contact",
+        "principalinvestigator": "Principal investigator",
+        "processor": "Processor",
+        "publisher": "Publisher",
+        "author": "Author",
+        "coauthor": "Co-author",
+        "collaborator": "Collaborator",
+        "editor": "Editor",
+        "mediator": "Mediator",
+        "rightsholder": "Rights holder",
+        "contributor": "Contributor",
+        "funder": "Funder",
+        "stakeholder": "Stakeholder",
+    }
+    by_num = _build_by_num_from_arcgis("CI_RoleCode", by_name, _ARCGIS_CODED_VALUES)
+    return by_name, by_num
+
+
+def _codelist_progress():
+    # MD_ProgressCode: status of the dataset
+    by_name = {
+        "completed": "Completed",
+        "historicalarchive": "Historical archive",
+        "obsolete": "Obsolete",
+        "ongoing": "On-going",
+        "planned": "Planned",
+        "required": "Required",
+        "underdevelopment": "Under development",
+        "final": "Final",
+        "pending": "Pending",
+        "retired": "Retired",
+        "superseded": "Superseded",
+        "tentative": "Tentative",
+        "valid": "Valid",
+        "accepted": "Accepted",
+        "notaccepted": "Not accepted",
+        "withdrawn": "Withdrawn",
+        "proposed": "Proposed",
+        "deprecated": "Deprecated",
+    }
+    by_num = _build_by_num_from_arcgis("MD_ProgressCode", by_name, _ARCGIS_CODED_VALUES)
+    return by_name, by_num
+
+
+def _codelist_maintenance_frequency():
+    # MD_MaintenanceFrequencyCode
+    by_name = {
+        "continual": "Continual",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "fortnightly": "Fortnightly",
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
+        "biannually": "Biannually",
+        "annually": "Annually",
+        "asneeded": "As needed",
+        "irregular": "Irregular",
+        "notplanned": "Not planned",
+        "unknown": "Unknown",
+        "semimonthly": "Semi-monthly",
+        "periodic": "Periodic",
+        "biennially": "Biennially",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_MaintenanceFrequencyCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_topic_category():
+    # MD_TopicCategoryCode (high-level thematic classification)
+    by_name = {
+        "farming": "Farming",
+        "biota": "Biota",
+        "boundaries": "Boundaries",
+        "climatologymeteorologyatmosphere": "Climatology, meteorology, atmosphere",
+        "economy": "Economy",
+        "elevation": "Elevation",
+        "environment": "Environment",
+        "geoscientificinformation": "Geoscientific information",
+        "health": "Health",
+        "imagerybasemapsearthcover": "Imagery, base maps, earth cover",
+        "intelligencemilitary": "Intelligence, military",
+        "inlandwaters": "Inland waters",
+        "location": "Location",
+        "oceans": "Oceans",
+        "planningcadastre": "Planning, cadastre",
+        "society": "Society",
+        "structure": "Structure",
+        "transportation": "Transportation",
+        "utilitiescommunication": "Utilities, communication",
+        "extraterrestrial": "Extra-terrestrial",
+        "disaster": "Disaster",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_TopicCategoryCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_scope():
+    # MD_ScopeCode: class of information
+    by_name = {
+        "attribute": "Attribute",
+        "attributetype": "Attribute type",
+        "collectionhardware": "Collection hardware",
+        "collectionsession": "Collection session",
+        "dataset": "Dataset",
+        "series": "Series",
+        "nongeographicdataset": "Non-geographic dataset",
+        "dimensiongroup": "Dimension group",
+        "feature": "Feature",
+        "featuretype": "Feature type",
+        "propertytype": "Property type",
+        "fieldsession": "Field session",
+        "software": "Software",
+        "service": "Service",
+        "model": "Model",
+        "tile": "Tile",
+        "metadata": "Metadata",
+        "initiative": "Initiative",
+        "sample": "Sample",
+        "document": "Document",
+        "repository": "Repository",
+        "aggregate": "Aggregate",
+        "product": "Product",
+        "collection": "Collection",
+        "coverage": "Coverage",
+        "application": "Application",
+        "stereomate": "Stereomate",
+        "sensor": "Sensor",
+        "platformseries": "Platform series",
+        "sensorseries": "Sensor series",
+        "productionseries": "Production series",
+        "transferaggregate": "Transfer aggregate",
+        "otheraggregate": "Other aggregate",
+    }
+    by_num = _build_by_num_from_arcgis("MD_ScopeCode", by_name, _ARCGIS_CODED_VALUES)
+    return by_name, by_num
+
+
+def _codelist_character_set():
+    # MD_CharacterSetCode
+    by_name = {
+        "ucs2": "UCS-2",
+        "ucs4": "UCS-4",
+        "utf7": "UTF-7",
+        "utf8": "UTF-8",
+        "utf16": "UTF-16",
+        "8859part1": "ISO 8859-1",
+        "8859part2": "ISO 8859-2",
+        "8859part3": "ISO 8859-3",
+        "8859part4": "ISO 8859-4",
+        "8859part5": "ISO 8859-5",
+        "8859part6": "ISO 8859-6",
+        "8859part7": "ISO 8859-7",
+        "8859part8": "ISO 8859-8",
+        "8859part9": "ISO 8859-9",
+        "8859part10": "ISO 8859-10",
+        "8859part11": "ISO 8859-11",
+        "8859part13": "ISO 8859-13",
+        "8859part14": "ISO 8859-14",
+        "8859part15": "ISO 8859-15",
+        "8859part16": "ISO 8859-16",
+        "usascii": "US ASCII",
+        "ebcdic": "EBCDIC",
+        "jis": "JIS",
+        "shiftjis": "Shift JIS",
+        "eucjp": "EUC-JP",
+        "euckr": "EUC-KR",
+        "big5": "Big 5",
+        "gb2312": "GB 2312",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_CharacterSetCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_spatial_representation():
+    # MD_SpatialRepresentationTypeCode
+    by_name = {
+        "vector": "Vector",
+        "grid": "Grid",
+        "texttable": "Text, table",
+        "tin": "TIN",
+        "stereomodel": "Stereo model",
+        "video": "Video",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_SpatialRepresentationTypeCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_topology_level():
+    # MD_TopologyLevelCode
+    by_name = {
+        "geometryonly": "Geometry only",
+        "topology1d": "Topology 1D",
+        "planargraph": "Planar graph",
+        "fullplanargraph": "Full planar graph",
+        "surfacegraph": "Surface graph",
+        "fullsurfacegraph": "Full surface graph",
+        "topology3d": "Topology 3D",
+        "fulltopology3d": "Full topology 3D",
+        "abstract": "Abstract",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_TopologyLevelCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_presentation_form():
+    # CI_PresentationFormCode
+    by_name = {
+        "documentdigital": "Document (digital)",
+        "documenthardcopy": "Document (hard copy)",
+        "imagedigital": "Image (digital)",
+        "imagehardcopy": "Image (hard copy)",
+        "mapdigital": "Map (digital)",
+        "maphardcopy": "Map (hard copy)",
+        "modeldigital": "Model (digital)",
+        "modelhardcopy": "Model (hard copy)",
+        "profiledigital": "Profile (digital)",
+        "profilehardcopy": "Profile (hard copy)",
+        "tabledigital": "Table (digital)",
+        "tablehardcopy": "Table (hard copy)",
+        "videodigital": "Video (digital)",
+        "videohardcopy": "Video (hard copy)",
+        "audiodigital": "Audio (digital)",
+        "audiohardcopy": "Audio (hard copy)",
+        "multimediadigital": "Multimedia (digital)",
+        "multimediahardcopy": "Multimedia (hard copy)",
+        "diagramdigital": "Diagram (digital)",
+        "diagramhardcopy": "Diagram (hard copy)",
+        "physicalobject": "Physical object",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "CI_PresentationFormCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+# Codelist registry: name -> (by_name dict, by_num dict)
+_CODELISTS = {
+    "MD_RestrictionCode": _codelist_restriction(),
+    "CI_RoleCode": _codelist_role(),
+    "MD_ProgressCode": _codelist_progress(),
+    "MD_MaintenanceFrequencyCode": _codelist_maintenance_frequency(),
+    "MD_TopicCategoryCode": _codelist_topic_category(),
+    "MD_ScopeCode": _codelist_scope(),
+    "MD_CharacterSetCode": _codelist_character_set(),
+    "MD_SpatialRepresentationTypeCode": _codelist_spatial_representation(),
+    "MD_TopologyLevelCode": _codelist_topology_level(),
+    "CI_PresentationFormCode": _codelist_presentation_form(),
+}
+
+# Export fields that are resolved via codelists (for the Code resolution worksheet).
+# Order: (Export field name, Codelist name).
+FIELD_TO_CODELIST = [
+    ("Access Constraints", "MD_RestrictionCode"),
+    ("Presentation Form", "CI_PresentationFormCode"),
+    ("Character Set", "MD_CharacterSetCode"),
+    ("Spatial Representation Type", "MD_SpatialRepresentationTypeCode"),
+    ("Status", "MD_ProgressCode"),
+    ("Maintenance Frequency", "MD_MaintenanceFrequencyCode"),
+    ("Topic Category", "MD_TopicCategoryCode"),
+    ("Contact Role", "CI_RoleCode"),
+    ("Topology Level", "MD_TopologyLevelCode"),
+    ("Geometry Object Type", "MD_SpatialRepresentationTypeCode"),
+    ("Data Quality Scope Level", "MD_ScopeCode"),
+    ("Metadata Maintenance Frequency", "MD_MaintenanceFrequencyCode"),
+    ("Metadata Scope Code", "MD_ScopeCode"),
+    ("Metadata Character Set", "MD_CharacterSetCode"),
+]
+
+
+def get_codelist_resolution_table():
+    """
+    Return a list of (codelist_name, code, label) for building the Code resolution sheet.
+    Code is the numeric form (e.g. 1, 5); label is the human-readable text.
+    """
+    rows = []
+    for codelist_name in sorted(_CODELISTS.keys()):
+        _by_name, by_num = _CODELISTS[codelist_name]
+        for num in sorted(by_num.keys()):
+            rows.append((codelist_name, str(num), by_num[num]))
+    return rows
+
+
+def resolve_codelist(raw_value, codelist_name):
+    """
+    Return a human-readable label for an ISO 19139 codelist value.
+
+    ArcGIS often stores a numeric code (e.g. "005" for licence); standard ISO may
+    use the code name (e.g. "license"). If the value is recognised, returns the
+    label; otherwise returns the original value unchanged.
+
+    Args:
+        raw_value: The 'value' or 'codeListValue' from the XML (e.g. "005", "license").
+        codelist_name: One of the keys in _CODELISTS (e.g. "MD_RestrictionCode").
+
+    Returns:
+        Display string (e.g. "Licence") or raw_value if not found.
+    """
+    if not raw_value or not isinstance(raw_value, str):
+        return raw_value or ""
+    raw = raw_value.strip()
+    if not raw:
+        return ""
+    if codelist_name not in _CODELISTS:
+        return raw
+    by_name, by_num = _CODELISTS[codelist_name]
+    # Try as name (case-insensitive, no spaces/hyphens)
+    key = re.sub(r"[\s\-]", "", raw).lower()
+    if key in by_name:
+        return by_name[key]
+    # Try as integer (strip leading zeros for lookup)
+    try:
+        n = int(raw)
+        if n in by_num:
+            return by_num[n]
+    except ValueError:
+        pass
+    return raw
+
 
 def get_field_obligation(field_name):
     """
@@ -248,7 +916,9 @@ def extract_all_fields(root):
             
             pres_form = citation.find('.//presForm/PresFormCd')
             if pres_form is not None:
-                add_field("Presentation Form", get_attribute_value(pres_form, 'value'))
+                add_field("Presentation Form", resolve_codelist(
+                    get_attribute_value(pres_form, 'value') or get_attribute_value(pres_form, 'codeListValue'),
+                    "CI_PresentationFormCode"))
         
         # Extent
         data_ext = data_id.find('dataExt')
@@ -281,7 +951,9 @@ def extract_all_fields(root):
         
         access_const = data_id.find('.//accessConsts/RestrictCd')
         if access_const is not None:
-            add_field("Access Constraints", get_attribute_value(access_const, 'value'))
+            add_field("Access Constraints", resolve_codelist(
+                get_attribute_value(access_const, 'value') or get_attribute_value(access_const, 'codeListValue'),
+                "MD_RestrictionCode"))
         
         other_const = data_id.find('.//othConsts')
         if other_const is not None:
@@ -299,12 +971,16 @@ def extract_all_fields(root):
         # Character Set
         char_set = data_id.find('.//dataChar/CharSetCd')
         if char_set is not None:
-            add_field("Character Set", get_attribute_value(char_set, 'value'))
+            add_field("Character Set", resolve_codelist(
+                get_attribute_value(char_set, 'value') or get_attribute_value(char_set, 'codeListValue'),
+                "MD_CharacterSetCode"))
         
         # Spatial Representation Type
         spat_rep = data_id.find('.//spatRpType/SpatRepTypCd')
         if spat_rep is not None:
-            add_field("Spatial Representation Type", get_attribute_value(spat_rep, 'value'))
+            add_field("Spatial Representation Type", resolve_codelist(
+                get_attribute_value(spat_rep, 'value') or get_attribute_value(spat_rep, 'codeListValue'),
+                "MD_SpatialRepresentationTypeCode"))
         
         # Scale
         scale = data_id.find('.//dataScale/equScale/rfDenom')
@@ -319,7 +995,9 @@ def extract_all_fields(root):
         # Status
         status = data_id.find('.//idStatus/ProgCd')
         if status is not None:
-            add_field("Status", get_attribute_value(status, 'value'))
+            add_field("Status", resolve_codelist(
+                get_attribute_value(status, 'value') or get_attribute_value(status, 'codeListValue'),
+                "MD_ProgressCode"))
         
         # Graphic Overview
         graph_over = data_id.find('graphOver')
@@ -331,12 +1009,16 @@ def extract_all_fields(root):
         # Maintenance
         maint = data_id.find('.//resMaint/maintFreq/MaintFreqCd')
         if maint is not None:
-            add_field("Maintenance Frequency", get_attribute_value(maint, 'value'))
+            add_field("Maintenance Frequency", resolve_codelist(
+                get_attribute_value(maint, 'value') or get_attribute_value(maint, 'codeListValue'),
+                "MD_MaintenanceFrequencyCode"))
         
         # Topic Category
         topic_cat = data_id.find('.//tpCat/TopicCatCd')
         if topic_cat is not None:
-            add_field("Topic Category", get_attribute_value(topic_cat, 'value'))
+            add_field("Topic Category", resolve_codelist(
+                get_attribute_value(topic_cat, 'value') or get_attribute_value(topic_cat, 'codeListValue'),
+                "MD_TopicCategoryCode"))
         
         # Other Keywords
         other_keys = data_id.findall('.//otherKeys')
@@ -388,7 +1070,9 @@ def extract_all_fields(root):
         
         role = contact.find('.//role/RoleCd')
         if role is not None:
-            add_field("Contact Role", get_attribute_value(role, 'value'))
+            add_field("Contact Role", resolve_codelist(
+                get_attribute_value(role, 'value') or get_attribute_value(role, 'codeListValue'),
+                "CI_RoleCode"))
     
     # Extract Attribute Definitions (eainfo)
     eainfo = root.find('.//eainfo/detailed')
@@ -414,13 +1098,17 @@ def extract_all_fields(root):
     if spat_rep_info is not None:
         top_level = spat_rep_info.find('.//topLvl/TopoLevCd')
         if top_level is not None:
-            add_field("Topology Level", get_attribute_value(top_level, 'value'))
+            add_field("Topology Level", resolve_codelist(
+                get_attribute_value(top_level, 'value') or get_attribute_value(top_level, 'codeListValue'),
+                "MD_TopologyLevelCode"))
         
         geo_objs = spat_rep_info.find('.//geometObjs')
         if geo_objs is not None:
             geo_type = geo_objs.find('.//geoObjTyp/GeoObjTypCd')
             if geo_type is not None:
-                add_field("Geometry Object Type", get_attribute_value(geo_type, 'value'))
+                add_field("Geometry Object Type", resolve_codelist(
+                    get_attribute_value(geo_type, 'value') or get_attribute_value(geo_type, 'codeListValue'),
+                    "MD_SpatialRepresentationTypeCode"))
             
             geo_count = geo_objs.find('.//geoObjCnt')
             if geo_count is not None:
@@ -446,7 +1134,9 @@ def extract_all_fields(root):
     if dq_info is not None:
         scope = dq_info.find('.//scpLvl/ScopeCd')
         if scope is not None:
-            add_field("Data Quality Scope Level", get_attribute_value(scope, 'value'))
+            add_field("Data Quality Scope Level", resolve_codelist(
+                get_attribute_value(scope, 'value') or get_attribute_value(scope, 'codeListValue'),
+                "MD_ScopeCode"))
         
         lineage = dq_info.find('.//dataLineage/statement')
         if lineage is not None:
@@ -491,7 +1181,9 @@ def extract_all_fields(root):
     if md_maint is not None:
         maint_freq = md_maint.find('.//maintFreq/MaintFreqCd')
         if maint_freq is not None:
-            add_field("Metadata Maintenance Frequency", get_attribute_value(maint_freq, 'value'))
+            add_field("Metadata Maintenance Frequency", resolve_codelist(
+                get_attribute_value(maint_freq, 'value') or get_attribute_value(maint_freq, 'codeListValue'),
+                "MD_MaintenanceFrequencyCode"))
     
     # Extract Metadata Language
     md_lang = root.find('.//mdLang')
@@ -509,7 +1201,9 @@ def extract_all_fields(root):
     if md_hr_lv is not None:
         scope_cd = md_hr_lv.find('ScopeCd')
         if scope_cd is not None:
-            add_field("Metadata Scope Code", get_attribute_value(scope_cd, 'value'))
+            add_field("Metadata Scope Code", resolve_codelist(
+                get_attribute_value(scope_cd, 'value') or get_attribute_value(scope_cd, 'codeListValue'),
+                "MD_ScopeCode"))
     
     hr_lv_name = root.find('.//mdHrLvName')
     if hr_lv_name is not None:
@@ -549,7 +1243,9 @@ def extract_all_fields(root):
     if md_char is not None:
         char_set = md_char.find('CharSetCd')
         if char_set is not None:
-            add_field("Metadata Character Set", get_attribute_value(char_set, 'value'))
+            add_field("Metadata Character Set", resolve_codelist(
+                get_attribute_value(char_set, 'value') or get_attribute_value(char_set, 'codeListValue'),
+                "MD_CharacterSetCode"))
     
     md_date = root.find('.//mdDateSt')
     if md_date is not None:
@@ -649,13 +1345,15 @@ def create_excel_matrix(all_data, field_names, output_file):
     """
     Build the Excel workbook and write it to disk.
 
-    Creates two sheets:
+    Creates three sheets:
     1. "Compliance Summary" (first): one row per file with Filename, ISO 19139
        compliant (Yes/No), Missing mandatory fields, Missing count.
     2. "Metadata Export": Row 1 = headers (Filename + attribute names), Row 2 =
        optionality (mandatory/optional/conditional per column), Row 3+ = one row per
        file with filename and attribute values. Freezes header and optionality rows
        and the filename column. Applies styling and text wrapping.
+    3. "Code resolution": Lists which export fields use codelist resolution and
+       summarises how numeric/code values are mapped to human-readable labels.
 
     Args:
         all_data: Dict mapping filename to dict of field name -> value.
@@ -710,10 +1408,13 @@ def create_excel_matrix(all_data, field_names, output_file):
     # Freeze header and optionality row plus filename column
     ws.freeze_panes = 'B3'
 
-    # Text wrapping for data cells
+    # Text wrapping for data cells; shade empty cells light gray
+    empty_fill = PatternFill(start_color="E8E8E8", end_color="E8E8E8", fill_type="solid")
     for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical='top')
+            if not (cell.value is not None and str(cell.value).strip()):
+                cell.fill = empty_fill
 
     # Compliance Summary sheet
     compliance = compute_compliance(all_data, field_names)
@@ -735,6 +1436,50 @@ def create_excel_matrix(all_data, field_names, output_file):
     for row in ws_summary.iter_rows(min_row=2, max_row=ws_summary.max_row, min_col=3, max_col=3):
         for cell in row:
             cell.alignment = Alignment(wrap_text=True, vertical='top')
+
+    # Code resolution worksheet: fields that use codelists and how codes map to text
+    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws_codes = wb.create_sheet("Code resolution", 2)
+    row_num = 1
+    ws_codes.cell(row=row_num, column=1, value="Fields using code resolution - where code numbers are replaced in the report with full text for ease of reading")
+    ws_codes.cell(row=row_num, column=1).font = Font(bold=True, size=12)
+    row_num += 1
+    ws_codes.cell(row=row_num, column=1, value="Export field name")
+    ws_codes.cell(row=row_num, column=2, value="Codelist")
+    for c in range(1, 3):
+        ws_codes.cell(row=row_num, column=c).fill = header_fill
+        ws_codes.cell(row=row_num, column=c).font = header_font
+        ws_codes.cell(row=row_num, column=c).alignment = header_align
+    row_num += 1
+    for field_name, codelist_name in FIELD_TO_CODELIST:
+        ws_codes.cell(row=row_num, column=1, value=field_name)
+        ws_codes.cell(row=row_num, column=2, value=codelist_name)
+        row_num += 1
+    row_num += 1
+    ws_codes.cell(row=row_num, column=1, value="How codes are resolved to text")
+    ws_codes.cell(row=row_num, column=1).font = Font(bold=True, size=12)
+    row_num += 1
+    ws_codes.cell(row=row_num, column=1, value="Numeric codes (e.g. 005 in XML) and code names (e.g. license) are mapped to the labels below. ArcGIS often uses 3-digit numeric values.")
+    ws_codes.cell(row=row_num, column=1).alignment = Alignment(wrap_text=True)
+    row_num += 2
+    ws_codes.cell(row=row_num, column=1, value="Codelist")
+    ws_codes.cell(row=row_num, column=2, value="Code (numeric or name)")
+    ws_codes.cell(row=row_num, column=3, value="Resolved label")
+    for c in range(1, 4):
+        ws_codes.cell(row=row_num, column=c).fill = header_fill
+        ws_codes.cell(row=row_num, column=c).font = header_font
+        ws_codes.cell(row=row_num, column=c).alignment = header_align
+    row_num += 1
+    for codelist_name, code, label in get_codelist_resolution_table():
+        ws_codes.cell(row=row_num, column=1, value=codelist_name)
+        ws_codes.cell(row=row_num, column=2, value=code)
+        ws_codes.cell(row=row_num, column=3, value=label)
+        row_num += 1
+    ws_codes.column_dimensions["A"].width = 32
+    ws_codes.column_dimensions["B"].width = 28
+    ws_codes.column_dimensions["C"].width = 36
 
     wb.save(output_file)
     print(f"\nExcel file created successfully: {output_file}")
@@ -765,7 +1510,9 @@ def parse_args():
     args = parser.parse_args()
     xml_folder = Path(args.input_folder)
     folder_name = xml_folder.name
-    output_file = f"metadata_export_{folder_name}.xlsx"
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    output_file = reports_dir / f"metadata_export_{folder_name}.xlsx"
     args.input_folder = xml_folder
     args.output_file = output_file
     return args

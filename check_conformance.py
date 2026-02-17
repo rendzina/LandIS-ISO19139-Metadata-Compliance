@@ -420,7 +420,9 @@ def parse_args():
     args = parser.parse_args()
     folder = Path(args.input_folder)
     folder_name = folder.name
-    output_file = "conformance_report_%s.xlsx" % folder_name
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    output_file = reports_dir / ("conformance_report_%s.xlsx" % folder_name)
     return folder, output_file
 
 
