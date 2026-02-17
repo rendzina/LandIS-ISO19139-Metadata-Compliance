@@ -358,6 +358,12 @@ def _get_inlined_arcgis_coded_values():
         ("MD_CharacterSetCode", "027", "eucKR"),
         ("MD_CharacterSetCode", "028", "big5"),
         ("MD_CharacterSetCode", "029", "GB2312"),
+        ("MD_GeometricObjectTypeCode", "001", "complex"),
+        ("MD_GeometricObjectTypeCode", "002", "composite"),
+        ("MD_GeometricObjectTypeCode", "003", "curve"),
+        ("MD_GeometricObjectTypeCode", "004", "point"),
+        ("MD_GeometricObjectTypeCode", "005", "solid"),
+        ("MD_GeometricObjectTypeCode", "006", "surface"),
     ]
 
 
@@ -671,6 +677,51 @@ def _codelist_presentation_form():
     return by_name, by_num
 
 
+def _codelist_geometric_object_type():
+    # MD_GeometricObjectTypeCode (geometry type of features)
+    by_name = {
+        "complex": "Complex",
+        "composite": "Composite",
+        "curve": "Curve",
+        "point": "Point",
+        "solid": "Solid",
+        "surface": "Surface",
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MD_GeometricObjectTypeCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
+def _codelist_content_type():
+    # ArcGIS item content type (imsContentType); from Esri DTD comment.
+    by_name = {
+        "livedataandmaps": "Live Data and Maps",
+        "downloadabledata": "Downloadable Data",
+        "offlinedata": "Offline Data",
+        "staticmapimages": "Static Map Images",
+        "otherdocuments": "Other Documents",
+        "applications": "Applications",
+        "geographicservices": "Geographic Services",
+        "clearinghouses": "Clearinghouses",
+        "mapfiles": "Map Files",
+        "geographicactivities": "Geographic Activities",
+    }
+    by_num = {
+        1: "Live Data and Maps",
+        2: "Downloadable Data",
+        3: "Offline Data",
+        4: "Static Map Images",
+        5: "Other Documents",
+        6: "Applications",
+        7: "Geographic Services",
+        8: "Clearinghouses",
+        9: "Map Files",
+        10: "Geographic Activities",
+    }
+    return by_name, by_num
+
+
 # Codelist registry: name -> (by_name dict, by_num dict)
 _CODELISTS = {
     "MD_RestrictionCode": _codelist_restriction(),
@@ -683,6 +734,8 @@ _CODELISTS = {
     "MD_SpatialRepresentationTypeCode": _codelist_spatial_representation(),
     "MD_TopologyLevelCode": _codelist_topology_level(),
     "CI_PresentationFormCode": _codelist_presentation_form(),
+    "MD_GeometricObjectTypeCode": _codelist_geometric_object_type(),
+    "ArcGIS_ContentTypeCode": _codelist_content_type(),
 }
 
 # Export fields that are resolved via codelists (for the Code resolution worksheet).
@@ -697,11 +750,13 @@ FIELD_TO_CODELIST = [
     ("Topic Category", "MD_TopicCategoryCode"),
     ("Contact Role", "CI_RoleCode"),
     ("Topology Level", "MD_TopologyLevelCode"),
-    ("Geometry Object Type", "MD_SpatialRepresentationTypeCode"),
+    ("Geometry Object Type", "MD_GeometricObjectTypeCode"),
+    ("Feature Geometry Code", "MD_GeometricObjectTypeCode"),
     ("Data Quality Scope Level", "MD_ScopeCode"),
     ("Metadata Maintenance Frequency", "MD_MaintenanceFrequencyCode"),
     ("Metadata Scope Code", "MD_ScopeCode"),
     ("Metadata Character Set", "MD_CharacterSetCode"),
+    ("Content Type", "ArcGIS_ContentTypeCode"),
 ]
 
 
@@ -894,7 +949,9 @@ def extract_all_fields(root):
             item_props = data_props.find('.//itemProps')
             if item_props is not None:
                 add_field("Item Name", get_text(item_props.find('itemName')))
-                add_field("Content Type", get_text(item_props.find('imsContentType')))
+                add_field("Content Type", resolve_codelist(
+                    get_text(item_props.find('imsContentType')) or "",
+                    "ArcGIS_ContentTypeCode"))
                 
                 # Native extent
                 native_ext = item_props.find('.//nativeExtBox')
@@ -1136,7 +1193,7 @@ def extract_all_fields(root):
             if geo_type is not None:
                 add_field("Geometry Object Type", resolve_codelist(
                     get_attribute_value(geo_type, 'value') or get_attribute_value(geo_type, 'codeListValue'),
-                    "MD_SpatialRepresentationTypeCode"))
+                    "MD_GeometricObjectTypeCode"))
             
             geo_count = geo_objs.find('.//geoObjCnt')
             if geo_count is not None:
@@ -1251,7 +1308,9 @@ def extract_all_fields(root):
             
             feat_geom = esri_term.find('efeageom')
             if feat_geom is not None:
-                add_field("Feature Geometry Code", get_attribute_value(feat_geom, 'code'))
+                add_field("Feature Geometry Code", resolve_codelist(
+                    get_attribute_value(feat_geom, 'code') or "",
+                    "MD_GeometricObjectTypeCode"))
     
     # Extract Metadata Standard
     md_std_name = root.find('.//mdStanName')
