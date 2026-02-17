@@ -2,11 +2,23 @@
 """
 Strict namespace-aware ISO 19139 conformance checker.
 
-Processes all .xml files in a given folder and produces an Excel report showing
-how each file satisfies obligatory (mandatory), optional, and conditional
-elements per ISO 19139 / INSPIRE (Regulation 1205/2008). Uses the official
-gmd/gco namespaces so that only properly namespaced ISO 19139 content is
+Processes all ISO19139 .xml files exported from ArcGIS Pro or ArcGIS Online in a 
+given folder. For each file with root gmd:MD_Metadata (proper ISO 19139 namespacing),
+produces an Excel report showing how it satisfies obligatory (mandatory), optional,
+and conditional elements per ISO 19139 / INSPIRE (Regulation 1205/2008). Uses the
+official gmd/gco namespaces so that only properly namespaced ISO 19139 content is
 recognised.
+
+Progress and errors for each file are printed to the console during the run.
+
+Expects XML with root gmd:MD_Metadata (proper ISO 19139 namespacing). Files in
+ArcGIS internal format are skipped. Aligned with INSPIRE Regulation 1205/2008 for
+mandatory/optional/conditional classification.
+
+The script is provided as part of the LandIS Soil Portal project, but can be used with 
+any ISO 19139 metadata files that are properly namespaced.
+
+Stephen Hallett, Cranfield University, 2026
 
 Usage:
     python check_conformance.py [folder]

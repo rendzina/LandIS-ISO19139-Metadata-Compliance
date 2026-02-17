@@ -1,16 +1,44 @@
 #!/usr/bin/env python3
 """
-Batch extraction of metadata from ISO 19139 / ArcGIS XML files into a single Excel workbook.
+Batch extraction of metadata from ArcGIS XML (ISO 19139) metadata export files into Excel report.
 
-The input folder is a script parameter (default: 'xml'). The output file is named
-metadata_export_<foldername>.xlsx so it reflects the source folder. The workbook contains:
-  - A "Metadata Export" sheet: one row per file, one column per attribute, with a second
-    row labelling each attribute as mandatory, optional, or conditional (ISO 19139/INSPIRE).
+ArcGIS Pro and ArcGIS Online both can save out metadata in XML format, firstly in an internal 
+form based on ISO19139 but including a lot of Esri-specific elements. This script will process 
+the files and provide a summary statement of the compliance of the metadata with the ISO19139 
+standard, as well as a digest of all the metadata values. The tool also outputs all the metadata 
+from each of the XML files processed into one spreadsheet output for ease of access. The tool can 
+therefore be used as part of a workflow to successively check for compliance of metadata with the 
+ISO19139 standard.
+
+Where 'lookup' codes have been used in the metadata export, the script will resolve them to the 
+display label for the code. This is done by looking up the code in the ArcGIS Metadata Details 
+Excel file (which is included in the toolkit). The script also outputs a report of the codes 
+that have been used in the metadata export, and the display labels for the codes.
+
+The input folder is a script parameter (default: 'xml'). The output report excel file is named
+metadata_export_<foldername>.xlsx so it reflects the source folder. Excel reports are placed in a 
+folder named 'reports'. The workbook contains three sheets:
   - A "Compliance Summary" sheet: per-file ISO 19139 compliance (Yes/No) and list of
     missing mandatory fields.
+  - A "Metadata Export" sheet: one row per file, one column per attribute, with a second
+    row labelling each attribute as mandatory, optional, or conditional (ISO 19139/INSPIRE).
+  - A "Code Resolution" sheet: a list of all the codes that have been used in the metadata export, 
+    and the display labels for the codes.
+
+Progress and errors for each file are printed to the console during the run.
 
 Designed for Esri/ArcGIS ISO 19139-style metadata (e.g. from ArcGIS Online) and aligned
 with INSPIRE Regulation 1205/2008 for mandatory/optional/conditional classification.
+
+The script is provided as part of the LandIS Soil Portal project, but can be used with 
+any metadata files exported from ArcGIS Pro or ArcGIS Online, including ISO 19139 
+metadata files that are properly namespaced.
+
+Stephen Hallett, Cranfield University, 2026
+
+Usage:
+    python extract_metadata.py [folder]
+    Default folder: xml. Output: metadata_export_<foldername>.xlsx
 """
 
 import argparse
@@ -137,7 +165,7 @@ def _load_arcgis_coded_values_from_excel(excel_path):
 
 def _get_inlined_arcgis_coded_values():
     """
-    Inlined (codelist_name, arc_code, std_code) from ArcGIS Metadata Details 20211130.xlsx
+    Inlined (codelist_name, arc_code, std_code) from https://github.com/Esri/arcgis-pro-metadata-toolkit/tree/master/resourcesArcGIS Metadata Details 20211130.xlsx
     so by_num can be built without requiring the Excel file. Used when the file is not present.
     """
     return [
