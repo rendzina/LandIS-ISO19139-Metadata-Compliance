@@ -17,18 +17,17 @@ Date: 04-02-2026
 
 This project processes **all** `.xml` metadata files in a given folder (default: `xml`) and produces **one Excel workbook** whose name includes the folder name (e.g. `metadata_export_xml.xlsx`) containing:
 
-1. **Metadata Export** sheet  
+1. **Compliance Summary** sheet (first)  
+   - One row per XML file with: **Filename**, **ISO 19139 compliant** (Yes/No), **Missing mandatory fields**, **Missing count**.
+
+2. **Metadata Export** sheet  
    - One **row per XML file**, one **column per metadata attribute**.  
    - **Row 1:** Column headers (Filename + attribute names).  
    - **Row 2:** Optionality row — each attribute column is labelled **mandatory**, **optional**, or **conditional** (ISO 19139 / INSPIRE).  
-   - **Row 3 onward:** Extracted values; empty cells mean the attribute was absent in that file.
+   - **Row 3 onward:** Extracted values; coded values (e.g. access constraints, role, content type, geometry type) are resolved to display labels where possible; empty cells mean the attribute was absent.
 
-2. **Compliance Summary** sheet  
-   - One row per XML file with:  
-     - **Filename**  
-     - **ISO 19139 compliant** (Yes/No)  
-     - **Missing mandatory fields** (comma-separated list)  
-     - **Missing count**
+3. **Code resolution** sheet  
+   - Lists which export fields use codelist resolution and how numeric/code values (e.g. ArcGIS `value="005"`) map to human-readable labels. Codelists are sourced from the Esri ArcGIS Pro Metadata Toolkit (ArcGIS Metadata Details) where available.
 
 Compliance is based on a fixed set of **mandatory** fields derived from INSPIRE / Regulation 1205/2008. A file is “compliant” only if every such mandatory field is present and non-empty in the extracted data.
 
@@ -41,6 +40,7 @@ Compliance is based on a fixed set of **mandatory** fields derived from INSPIRE 
 - **ISO 19139 optionality:** Second row on the export sheet shows whether each column is **mandatory**, **optional**, or **conditional**.
 - **Compliance report:** Per-file summary of ISO 19139 compliance and list of missing mandatory fields.
 - **Rich extraction:** Supports both Esri/ArcGIS-style and ISO 19139-style elements (data identification, contact, extent, keywords, distribution, data quality, reference system, etc.).
+- **Codelist resolution:** Numeric and code values (e.g. access constraints, contact role, content type, geometry type) are resolved to human-readable labels using codelists sourced from the Esri ArcGIS Pro Metadata Toolkit; a Code resolution sheet documents the mappings.
 - **Robust text handling:** Strips HTML tags and decodes HTML entities in text values.
 - **Error resilience:** A single failing file does not stop the run; errors are reported and the rest are still processed.
 
@@ -88,7 +88,7 @@ Without activating the venv (macOS/Linux):
 ```
 
 - **Input:** All `.xml` files in the given folder (default: `xml`).  
-- **Output:** `metadata_export_<foldername>.xlsx` in the current directory (e.g. `metadata_export_xml.xlsx` for the default folder, `metadata_export_Public.xlsx` for `XML_Exports/Public`).  
+- **Output:** `reports/metadata_export_<foldername>.xlsx` (e.g. `reports/metadata_export_xml.xlsx` for the default folder). The `reports` folder is created if it does not exist.  
 - **Console:** Progress lines per file plus a final summary (file count, attribute count, compliant vs non-compliant count).
 
 ### Conformance checker (strict namespace check)
@@ -106,7 +106,7 @@ python check_conformance.py V4/Public_ISO
 ```
 
 - **Input:** Folder of `.xml` files (same as extractor).  
-- **Output:** `conformance_report_<foldername>.xlsx` with:  
+- **Output:** `reports/conformance_report_<foldername>.xlsx` (the `reports` folder is created if needed) with:  
   - **Compliance Summary** — per file: conformant Yes/No, missing mandatory list, counts of present mandatory/conditional/optional.  
   - **Conformance Detail** — one row per file, one column per checked element; each cell is **Present**, **Empty**, or **Absent**; row 2 shows obligation (mandatory/conditional/optional).  
   - **Errors** (if any) — files skipped because they are not namespaced ISO 19139 (e.g. ArcGIS-style).
@@ -131,6 +131,10 @@ python check_conformance.py V4/Public_ISO
 - **Row 3+:** One row per XML file: filename in column A, then one cell per attribute (value or blank).  
 - Header and optionality rows and the filename column are frozen for easier scrolling.
 
+### Sheet: Code resolution
+
+- Lists each codelist used (e.g. MD_RestrictionCode, CI_RoleCode, MD_GeometricObjectTypeCode, MI_GeometryTypeCode, ArcGIS_ContentTypeCode) and the mapping from numeric code to display label so you can interpret values in the Metadata Export sheet.
+
 ---
 
 ## ISO 19139 Optionality
@@ -149,7 +153,7 @@ The mapping is defined in `FIELD_OBLIGATION` in `extract_metadata.py`; you can e
 
 The script extracts (where present) attributes from:
 
-- **Esri/ArcGIS:** Format, profile, dates, item name, content type, native extent, thumbnail, coordinate system, scale range.  
+- **Esri/ArcGIS:** Format, profile, dates, item name, content type (resolved from ArcGIS item content types where possible), native extent, thumbnail, coordinate system, scale range.  
 - **Data identification:** Title, alternate/collection title, abstract, extent description, geographic bounds, keywords, purpose, credit, use limitation, access/other constraints, language, character set, spatial representation type, scale denominator, environment, status, graphic overview, maintenance frequency, topic category, other keywords (with thesaurus name).  
 - **Contact:** Individual/organisation/position name, address (delivery point, city, admin area, postal code, country), email, phone, online resource, hours, instructions, role.  
 - **Spatial representation:** Topology level, geometry object type/count.  
@@ -157,31 +161,10 @@ The script extracts (where present) attributes from:
 - **Data quality:** Scope level, lineage statement, quality report type, conformance specification title, conformance pass.  
 - **Distribution:** Online resource linkage, protocol, name, description.  
 - **Metadata:** Maintenance frequency, language, country code, scope code, hierarchy level name, standard name/version, file ID, character set, date stamp.  
-- **Spatial domain (Esri):** Feature name, type, geometry code.  
+- **Spatial domain (Esri):** Feature name, type, feature geometry code (resolved via MI_GeometryTypeCode: point, linear, areal, strip).  
 - **Entity/attributes (eainfo):** Entity type label/type/count, attribute names list.  
 
 When the same logical field appears more than once (e.g. multiple keywords), values are concatenated with ` | `.
-
----
-
-## Project Layout
-
-```text
-LandIS-ISO19139-Metadata-Compliance/
-├── extract_metadata.py              # Main script: batch extract + Excel + compliance
-├── check_conformance.py             # Strict namespace-aware ISO 19139 conformance checker
-├── README.md                         # This file
-├── LICENSE
-├── .gitignore
-├── metadata_export_<folder>.xlsx    # Generated by extract_metadata.py (ignored by git)
-├── conformance_report_<folder>.xlsx # Generated by check_conformance.py (ignored by git)
-├── venv/                             # Virtual environment (create via Installation; ignored by git)
-├── xml/                              # Default input folder for XML files (create as needed)
-│   └── *.xml
-└── XML_Exports/                      # Example alternative input folder (create as needed)
-    └── Public/
-        └── *.xml
-```
 
 ---
 
@@ -196,7 +179,7 @@ LandIS-ISO19139-Metadata-Compliance/
 ## Customisation
 
 - **Input folder:** Pass the folder as the first argument: `python extract_metadata.py <folder>`. Default is `xml`.  
-- **Output path:** The output file is always `metadata_export_<foldername>.xlsx` in the current directory (foldername is the last component of the path). To change this, edit `parse_args()` in `extract_metadata.py`.  
+- **Output path:** Both scripts write to the `reports/` folder: `metadata_export_<foldername>.xlsx` and `conformance_report_<foldername>.xlsx`. To change the output directory, edit `parse_args()` in the relevant script (e.g. the `reports_dir` in `extract_metadata.py` or `check_conformance.py`).  
 - **Mandatory/optional/conditional:** Edit the `FIELD_OBLIGATION` dictionary in `extract_metadata.py`; the optionality row and Compliance Summary both use this mapping.
 
 ---

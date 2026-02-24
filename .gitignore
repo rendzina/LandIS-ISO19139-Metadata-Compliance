@@ -68,5 +68,7 @@ dmypy.json
 xml/
 AGOL_XML/
 V4/
+public/
+restricted/
 *.xml
 *.xlsx

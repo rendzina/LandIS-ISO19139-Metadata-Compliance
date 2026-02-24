@@ -364,6 +364,10 @@ def _get_inlined_arcgis_coded_values():
         ("MD_GeometricObjectTypeCode", "004", "point"),
         ("MD_GeometricObjectTypeCode", "005", "solid"),
         ("MD_GeometricObjectTypeCode", "006", "surface"),
+        ("MI_GeometryTypeCode", "001", "point"),
+        ("MI_GeometryTypeCode", "002", "linear"),
+        ("MI_GeometryTypeCode", "003", "areal"),
+        ("MI_GeometryTypeCode", "004", "strip"),
     ]
 
 
@@ -693,6 +697,22 @@ def _codelist_geometric_object_type():
     return by_name, by_num
 
 
+def _codelist_geometry_type():
+    # MI_GeometryTypeCode (ISO 19115-2: acquisition geometry – point, linear, areal, strip).
+    # Used for efeageom (feature geometry code) in ArcGIS metadata.
+    by_name = {
+        "point": "Point",
+        "linear": "Linear",
+        "areal": "Areal",
+        "strip": "Strip",
+        "polygon": "Areal",  # alias; ISO uses areal for polygon coverage
+    }
+    by_num = _build_by_num_from_arcgis(
+        "MI_GeometryTypeCode", by_name, _ARCGIS_CODED_VALUES
+    )
+    return by_name, by_num
+
+
 def _codelist_content_type():
     # ArcGIS item content type (imsContentType); from Esri DTD comment.
     by_name = {
@@ -735,6 +755,7 @@ _CODELISTS = {
     "MD_TopologyLevelCode": _codelist_topology_level(),
     "CI_PresentationFormCode": _codelist_presentation_form(),
     "MD_GeometricObjectTypeCode": _codelist_geometric_object_type(),
+    "MI_GeometryTypeCode": _codelist_geometry_type(),
     "ArcGIS_ContentTypeCode": _codelist_content_type(),
 }
 
@@ -751,7 +772,7 @@ FIELD_TO_CODELIST = [
     ("Contact Role", "CI_RoleCode"),
     ("Topology Level", "MD_TopologyLevelCode"),
     ("Geometry Object Type", "MD_GeometricObjectTypeCode"),
-    ("Feature Geometry Code", "MD_GeometricObjectTypeCode"),
+    ("Feature Geometry Code", "MI_GeometryTypeCode"),
     ("Data Quality Scope Level", "MD_ScopeCode"),
     ("Metadata Maintenance Frequency", "MD_MaintenanceFrequencyCode"),
     ("Metadata Scope Code", "MD_ScopeCode"),
@@ -1310,7 +1331,7 @@ def extract_all_fields(root):
             if feat_geom is not None:
                 add_field("Feature Geometry Code", resolve_codelist(
                     get_attribute_value(feat_geom, 'code') or "",
-                    "MD_GeometricObjectTypeCode"))
+                    "MI_GeometryTypeCode"))
     
     # Extract Metadata Standard
     md_std_name = root.find('.//mdStanName')
