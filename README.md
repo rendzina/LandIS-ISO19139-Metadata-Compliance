@@ -6,7 +6,7 @@ Tool background: ESRI ArcGIS Online (AGOL) can hold and export metadata files fo
 
 The code has been provided as part of the open source output for the LandIS Portal database conversion project. The tool should work with any XML files.
 
-http://www.landis.org.uk
+<http://www.landis.org.uk>
 
 Author: Stephen Hallett, Cranfield University
 Date: 04-02-2026
@@ -59,8 +59,8 @@ Compliance is based on a fixed set of **mandatory** fields derived from INSPIRE 
 
 ```bash
 # Clone or copy the project, then from the project root:
-python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+python3 -m venv venv       # Create a new virtual environment called venv
+source venv/bin/activate   # Windows: venv\Scripts\activate - start the venv up
 pip install openpyxl lxml
 ```
 

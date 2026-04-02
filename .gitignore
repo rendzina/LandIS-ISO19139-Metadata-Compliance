@@ -70,5 +70,6 @@ AGOL_XML/
 V4/
 public/
 restricted/
+reports/
 *.xml
 *.xlsx
