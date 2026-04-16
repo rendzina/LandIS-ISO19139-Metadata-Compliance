@@ -74,17 +74,19 @@ From the project root, with the virtual environment activated:
 # Use the default folder 'xml'
 python extract_metadata.py
 
-# Use a specific folder (output will be metadata_export_<foldername>.xlsx)
-python extract_metadata.py XML_Folder
+# Use a specific folder (output: metadata_export_<foldername>.xlsx)
+python extract_metadata.py V5/Public_ArcGIS
+python extract_metadata.py V5/Restricted_ArcGIS
 
 # Use a subfolder path (foldername is the last component, e.g. 'Public')
-python extract_metadata.py XML_Exports/Public
+python extract_metadata.py V5/Public_ArcGIS
 ```
 
 Without activating the venv (macOS/Linux):
 
 ```bash
-./venv/bin/python extract_metadata.py XML_Exports/Public
+./venv/bin/python extract_metadata.py V5/Public_ArcGIS
+./venv/bin/python extract_metadata.py V5/Restricted_ArcGIS
 ```
 
 - **Input:** All `.xml` files in the given folder (default: `xml`).  
@@ -100,9 +102,18 @@ A second script, `check_conformance.py`, performs a **strict namespace-aware** I
 python check_conformance.py
 
 # Specific folder (output: conformance_report_<foldername>.xlsx)
-python check_conformance.py V4/Public_ISO
+python check_conformance.py V5/Public_ISO
+python check_conformance.py V5/Restricted_ISO
 
-./venv/bin/python check_conformance.py V4/Public_ISO
+# Use a subfolder path (foldername is the last component, e.g. 'Public')
+python check_conformance.py V5/Public_ISO
+```
+
+Without activating the venv (macOS/Linux):
+
+```bash
+./venv/bin/python check_conformance.py V5/Public_ISO
+./venv/bin/python check_conformance.py V5/Restricted_ISO
 ```
 
 - **Input:** Folder of `.xml` files (same as extractor).  

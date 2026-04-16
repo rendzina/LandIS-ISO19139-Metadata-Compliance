@@ -67,9 +67,10 @@ dmypy.json
 # Metadata files and folders
 xml/
 AGOL_XML/
-V4/
+V5/
 public/
 restricted/
 reports/
 *.xml
 *.xlsx
+*.zip
